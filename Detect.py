@@ -39,7 +39,7 @@ if not ret:
     cap.release()
     exit()
 canvas_h, canvas_w, _ = frame.shape
-frame_aspect_ratio = frame.shape[0] / frame.shape[1] # height / width
+# frame_aspect_ratio = frame.shape[0] / frame.shape[1] # height / width
 
 # 3. Load background image and get its aspect ratio
 background_original = cv2.imread(background_image_path)
@@ -62,7 +62,7 @@ cv2.resizeWindow(bg_controls_window, 300, 150)
 cv2.moveWindow(bg_controls_window, 100, 100) # Position on left
 
 cv2.namedWindow(fg_controls_window)
-cv2.resizeWindow(fg_controls_window, 300, 200)
+cv2.resizeWindow(fg_controls_window, 300, 250) # Increased height for new trackbar
 cv2.moveWindow(fg_controls_window, canvas_w + 200, 100) # Position on right
 
 # Create trackbars for Background Image in its own window
@@ -75,6 +75,7 @@ cv2.createTrackbar('Width % ', fg_controls_window, 50, 100, nothing)
 cv2.createTrackbar('X Pos % ', fg_controls_window, 50, 100, nothing)
 cv2.createTrackbar('Y Pos % ', fg_controls_window, 50, 100, nothing)
 cv2.createTrackbar('Alpha % ', fg_controls_window, 70, 100, nothing)
+cv2.createTrackbar('Rotate', fg_controls_window, 0, 3, nothing) # 0:0, 1:90, 2:180, 3:270
 
 # --- Main Loop ---
 while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
@@ -83,6 +84,7 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     fg_x_p = cv2.getTrackbarPos('X Pos % ', fg_controls_window)
     fg_y_p = cv2.getTrackbarPos('Y Pos % ', fg_controls_window)
     fg_alpha_p = cv2.getTrackbarPos('Alpha % ', fg_controls_window)
+    rotation = cv2.getTrackbarPos('Rotate', fg_controls_window)
 
     bg_width_p = cv2.getTrackbarPos('Width % ', bg_controls_window)
     bg_x_p = cv2.getTrackbarPos('X Pos % ', bg_controls_window)
@@ -105,6 +107,18 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     ret, frame = cap.read()
     if not ret: break
 
+    # Apply rotation
+    if rotation == 1:
+        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    elif rotation == 2:
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
+    elif rotation == 3:
+        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    # if rotation is 0, do nothing (original orientation)
+    
+    # Recalculate aspect ratio after rotation
+    frame_aspect_ratio = frame.shape[0] / frame.shape[1]
+
     if fg_width_p > 0:
         fg_w = int(canvas_w * (fg_width_p / 100.0)); fg_h = int(fg_w * frame_aspect_ratio)
         if fg_h > canvas_h: fg_h = canvas_h; fg_w = int(fg_h / frame_aspect_ratio)
@@ -114,8 +128,11 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
             fg_x = int(max_x * (fg_x_p / 100.0)); fg_y = int(max_y * (fg_y_p / 100.0))
             alpha = fg_alpha_p / 100.0; beta = 1.0 - alpha
             roi = canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w]
-            blended_roi = cv2.addWeighted(scaled_fg, alpha, roi, beta, 0.0)
-            canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w] = blended_roi
+            
+            # Ensure ROI and scaled_fg have the same dimensions
+            if roi.shape[:2] == scaled_fg.shape[:2]:
+                blended_roi = cv2.addWeighted(scaled_fg, alpha, roi, beta, 0.0)
+                canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w] = blended_roi
 
     # --- Display result ---
     cv2.imshow(main_window, canvas)
