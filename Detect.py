@@ -39,7 +39,6 @@ if not ret:
     cap.release()
     exit()
 canvas_h, canvas_w, _ = frame.shape
-# frame_aspect_ratio = frame.shape[0] / frame.shape[1] # height / width
 
 # 3. Load background image and get its aspect ratio
 background_original = cv2.imread(background_image_path)
@@ -83,6 +82,7 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     fg_width_p = cv2.getTrackbarPos('Width % ', fg_controls_window)
     fg_x_p = cv2.getTrackbarPos('X Pos % ', fg_controls_window)
     fg_y_p = cv2.getTrackbarPos('Y Pos % ', fg_controls_window)
+    # Alpha is now mainly controlled by keyboard, but we still read it
     fg_alpha_p = cv2.getTrackbarPos('Alpha % ', fg_controls_window)
     rotation = cv2.getTrackbarPos('Rotate', fg_controls_window)
 
@@ -114,9 +114,7 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
         frame = cv2.rotate(frame, cv2.ROTATE_180)
     elif rotation == 3:
         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    # if rotation is 0, do nothing (original orientation)
-    
-    # Recalculate aspect ratio after rotation
+
     frame_aspect_ratio = frame.shape[0] / frame.shape[1]
 
     if fg_width_p > 0:
@@ -128,8 +126,7 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
             fg_x = int(max_x * (fg_x_p / 100.0)); fg_y = int(max_y * (fg_y_p / 100.0))
             alpha = fg_alpha_p / 100.0; beta = 1.0 - alpha
             roi = canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w]
-            
-            # Ensure ROI and scaled_fg have the same dimensions
+
             if roi.shape[:2] == scaled_fg.shape[:2]:
                 blended_roi = cv2.addWeighted(scaled_fg, alpha, roi, beta, 0.0)
                 canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w] = blended_roi
@@ -137,8 +134,20 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     # --- Display result ---
     cv2.imshow(main_window, canvas)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    # --- Handle Keyboard Input ---
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
         break
+    elif key == ord('1'):
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 22)
+    elif key == ord('2'):
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 44)
+    elif key == ord('3'):
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 66)
+    elif key == ord('4'):
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 88)
+    elif key == ord('5'):
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 100)
 
 # --- Cleanup ---
 cap.release()
