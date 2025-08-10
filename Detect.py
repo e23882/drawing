@@ -48,7 +48,16 @@ if background_original is None:
     exit()
 bg_aspect_ratio = background_original.shape[0] / background_original.shape[1]
 
-# 4. Create UI Windows
+# 4. Create effect assets and flags
+background_gray = cv2.cvtColor(background_original, cv2.COLOR_BGR2GRAY)
+_, background_binary = cv2.threshold(background_gray, 127, 255, cv2.THRESH_BINARY)
+background_binary_bgr = cv2.cvtColor(background_binary, cv2.COLOR_GRAY2BGR)
+background_effect = cv2.addWeighted(background_original, 0.5, background_binary_bgr, 0.5, 0)
+binarize_mode = False # Flag to toggle the binarize effect
+show_crosshair = False # Flag to toggle the crosshair
+edge_detection_mode = False # Flag to toggle edge detection on foreground
+
+# 5. Create UI Windows
 main_window = 'Webcam Live'
 bg_controls_window = 'Background Controls'
 fg_controls_window = 'Foreground Controls'
@@ -82,7 +91,6 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     fg_width_p = cv2.getTrackbarPos('Width % ', fg_controls_window)
     fg_x_p = cv2.getTrackbarPos('X Pos % ', fg_controls_window)
     fg_y_p = cv2.getTrackbarPos('Y Pos % ', fg_controls_window)
-    # Alpha is now mainly controlled by keyboard, but we still read it
     fg_alpha_p = cv2.getTrackbarPos('Alpha % ', fg_controls_window)
     rotation = cv2.getTrackbarPos('Rotate', fg_controls_window)
 
@@ -94,11 +102,13 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
 
     # --- Process and draw background ---
+    bg_to_draw = background_effect if binarize_mode else background_original
+    
     if bg_width_p > 0:
         bg_w = int(canvas_w * (bg_width_p / 100.0)); bg_h = int(bg_w * bg_aspect_ratio)
         if bg_h > canvas_h: bg_h = canvas_h; bg_w = int(bg_h / bg_aspect_ratio)
         if bg_w > 0 and bg_h > 0:
-            scaled_bg = cv2.resize(background_original, (bg_w, bg_h))
+            scaled_bg = cv2.resize(bg_to_draw, (bg_w, bg_h))
             max_x = canvas_w - bg_w; max_y = canvas_h - bg_h
             bg_x = int(max_x * (bg_x_p / 100.0)); bg_y = int(max_y * (bg_y_p / 100.0))
             canvas[bg_y:bg_y+bg_h, bg_x:bg_x+bg_w] = scaled_bg
@@ -114,6 +124,12 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
         frame = cv2.rotate(frame, cv2.ROTATE_180)
     elif rotation == 3:
         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+    # Apply edge detection if enabled
+    if edge_detection_mode:
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray_frame, 100, 200)
+        frame = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR) # Convert back to 3 channels
 
     frame_aspect_ratio = frame.shape[0] / frame.shape[1]
 
@@ -131,13 +147,28 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
                 blended_roi = cv2.addWeighted(scaled_fg, alpha, roi, beta, 0.0)
                 canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w] = blended_roi
 
+    # --- Draw Crosshair if enabled ---
+    if show_crosshair:
+        color = (0, 0, 255)  # Red in BGR
+        thickness = 1
+        # Horizontal line
+        cv2.line(canvas, (0, canvas_h // 2), (canvas_w, canvas_h // 2), color, thickness)
+        # Vertical line
+        cv2.line(canvas, (canvas_w // 2, 0), (canvas_w // 2, canvas_h), color, thickness)
+
     # --- Display result ---
     cv2.imshow(main_window, canvas)
 
     # --- Handle Keyboard Input ---
     key = cv2.waitKey(1) & 0xFF
-    if key == ord('q'):
+    if key == ord('z'): # Changed exit key to 'z'
         break
+    elif key == ord('q'): # Toggle binarize mode
+        binarize_mode = not binarize_mode
+    elif key == ord('w'): # Toggle crosshair
+        show_crosshair = not show_crosshair
+    elif key == ord('e'): # Toggle edge detection
+        edge_detection_mode = not edge_detection_mode
     elif key == ord('1'):
         cv2.setTrackbarPos('Alpha % ', fg_controls_window, 22)
     elif key == ord('2'):
