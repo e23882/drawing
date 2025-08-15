@@ -1,11 +1,13 @@
 {
-    "fg_width": 55,
+    "fg_width": 57,
     "fg_x": 10,
     "fg_y": 25,
     "fg_alpha": 75,
     "fg_rotate": 2,
-    "bg_width": 100,
-    "bg_x": 50,
-    "bg_y": 50,
-    "zoom_factor": 2
+    "bg_width": 22,
+    "bg_x": 63,
+    "bg_y": 21,
+    "zoom_factor": 2,
+    "fg_pan": 50,
+    "fg_tilt": 50
 }

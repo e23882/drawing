@@ -27,6 +27,7 @@ def load_settings():
     """Loads settings from a JSON file."""
     defaults = {
         'fg_width': 50, 'fg_x': 50, 'fg_y': 50, 'fg_alpha': 70, 'fg_rotate': 0,
+        'fg_pan': 50, 'fg_tilt': 50,
         'bg_width': 100, 'bg_x': 50, 'bg_y': 50, 'zoom_factor': 3
     }
     if not os.path.exists(CONFIG_FILE):
@@ -50,6 +51,48 @@ def save_settings(settings):
             json.dump(settings, f, indent=4)
     except IOError as e:
         print(f"Error saving settings: {e}")
+
+def get_3d_rotation_matrix(w, h, pan_deg, tilt_deg, zoom):
+    """
+    Calculates a 3D rotation matrix for perspective warp.
+    pan_deg: Rotation around Y-axis.
+    tilt_deg: Rotation around X-axis.
+    """
+    # Convert degrees to radians
+    pan = np.deg2rad(pan_deg)
+    tilt = np.deg2rad(tilt_deg)
+
+    # Focal length (can be adjusted)
+    f = w * zoom # Proportional to width and zoom
+
+    # 3D rotation matrices
+    Rx = np.array([[1, 0, 0],
+                   [0, np.cos(tilt), -np.sin(tilt)],
+                   [0, np.sin(tilt), np.cos(tilt)]])
+
+    Ry = np.array([[np.cos(pan), 0, -np.sin(pan)],
+                   [0, 1, 0],
+                   [np.sin(pan), 0, np.cos(pan)]])
+    
+    # Combined rotation matrix
+    R = np.dot(Ry, Rx)
+
+    # 4 points of the original image
+    pts_src = np.float32([[-w/2, -h/2, 0], [w/2, -h/2, 0], [w/2, h/2, 0], [-w/2, h/2, 0]])
+    
+    # Project points
+    pts_3d = np.dot(pts_src, R.T)
+    pts_2d = pts_3d[:, :2] / (pts_3d[:, 2, np.newaxis] * (1/f) + 1)
+
+    # Add center offset
+    pts_dst = pts_2d + np.array([w/2, h/2])
+
+    # Get the perspective transform matrix
+    src_pts = np.float32(pts_src[:,:2] + np.array([w/2, h/2]))
+    dst_pts = np.float32(pts_dst)
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    return M
+
 
 # --- Main Program ---
 
@@ -122,6 +165,8 @@ cv2.createTrackbar('X Pos % ', fg_controls_window, settings['fg_x'], 100, nothin
 cv2.createTrackbar('Y Pos % ', fg_controls_window, settings['fg_y'], 100, nothing)
 cv2.createTrackbar('Alpha % ', fg_controls_window, settings['fg_alpha'], 100, nothing)
 cv2.createTrackbar('Rotate', fg_controls_window, settings['fg_rotate'], 3, nothing)
+cv2.createTrackbar('Y-Rot % ', fg_controls_window, settings['fg_pan'], 100, nothing)
+cv2.createTrackbar('X-Rot % ', fg_controls_window, settings['fg_tilt'], 100, nothing)
 
 cv2.createTrackbar('Zoom', magnifier_window, settings['zoom_factor'], 15, nothing)
 cv2.setTrackbarMin('Zoom', magnifier_window, 2)
@@ -168,6 +213,8 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     settings['fg_y'] = cv2.getTrackbarPos('Y Pos % ', fg_controls_window)
     settings['fg_alpha'] = cv2.getTrackbarPos('Alpha % ', fg_controls_window)
     settings['fg_rotate'] = cv2.getTrackbarPos('Rotate', fg_controls_window)
+    settings['fg_pan'] = cv2.getTrackbarPos('Y-Rot % ', fg_controls_window)
+    settings['fg_tilt'] = cv2.getTrackbarPos('X-Rot % ', fg_controls_window)
 
     settings['bg_width'] = cv2.getTrackbarPos('Width % ', bg_controls_window)
     settings['bg_x'] = cv2.getTrackbarPos('X Pos % ', bg_controls_window)
@@ -194,27 +241,52 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     ret, frame = cap.read()
     if not ret: break
 
-    # Apply rotation
+    # --- 3D Rotation ---
+    h, w, _ = frame.shape
+    pan_percent = settings['fg_pan']
+    tilt_percent = settings['fg_tilt']
+
+    # Map percentage to a degree range, e.g., -45 to 45 degrees
+    # 50% is no rotation (0 degrees)
+    pan_angle = (pan_percent - 50) * 0.9 # -45 to 45
+    tilt_angle = (tilt_percent - 50) * 0.9 # -45 to 45
+
+    # The 'Width %' trackbar can be used to control the zoom/perspective intensity
+    # A value of 100 means a zoom of 1.0. We'll clamp it to avoid extremes.
+    zoom_factor = settings['fg_width'] / 50.0 # Map 0-100 to 0-2.0
+    if zoom_factor == 0: zoom_factor = 0.01
+
+    M = get_3d_rotation_matrix(w, h, pan_angle, tilt_angle, zoom_factor)
+    frame = cv2.warpPerspective(frame, M, (w, h))
+
+    # --- End 3D Rotation ---
+
+    # Apply 2D rotation (optional, after 3D)
     if settings['fg_rotate'] == 1: frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
     elif settings['fg_rotate'] == 2: frame = cv2.rotate(frame, cv2.ROTATE_180)
     elif settings['fg_rotate'] == 3: frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
     if edge_detection_mode: frame = cv2.cvtColor(cv2.Canny(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 100, 200), cv2.COLOR_GRAY2BGR)
 
-    frame_aspect_ratio = frame.shape[0] / frame.shape[1]
+    # We resize the transformed frame to fit the canvas, maintaining aspect ratio
+    # Note: The aspect ratio might be distorted by the perspective warp.
+    # We will use the original canvas aspect ratio for placement.
+    fg_w = canvas_w
+    fg_h = canvas_h
 
-    if settings['fg_width'] > 0:
-        fg_w = int(canvas_w * (settings['fg_width'] / 100.0)); fg_h = int(fg_w * frame_aspect_ratio)
-        if fg_h > canvas_h: fg_h = canvas_h; fg_w = int(fg_h / frame_aspect_ratio)
-        if fg_w > 0 and fg_h > 0:
-            scaled_fg = cv2.resize(frame, (fg_w, fg_h))
-            max_x = canvas_w - fg_w; max_y = canvas_h - fg_h
-            fg_x = int(max_x * (settings['fg_x'] / 100.0)); fg_y = int(max_y * (settings['fg_y'] / 100.0))
-            alpha = settings['fg_alpha'] / 100.0; beta = 1.0 - alpha
-            roi = canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w]
-            if roi.shape[:2] == scaled_fg.shape[:2]:
-                blended_roi = cv2.addWeighted(scaled_fg, alpha, roi, beta, 0.0)
-                canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w] = blended_roi
+    if fg_w > 0 and fg_h > 0:
+        # The transformed frame is resized to fill the whole canvas before positioning
+        scaled_fg = cv2.resize(frame, (fg_w, fg_h))
+        
+        # Positioning on the canvas
+        max_x = canvas_w - fg_w; max_y = canvas_h - fg_h
+        fg_x = int(max_x * (settings['fg_x'] / 100.0)); fg_y = int(max_y * (settings['fg_y'] / 100.0))
+        
+        alpha = settings['fg_alpha'] / 100.0; beta = 1.0 - alpha
+        roi = canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w]
+        if roi.shape[:2] == scaled_fg.shape[:2]:
+            blended_roi = cv2.addWeighted(scaled_fg, alpha, roi, beta, 0.0)
+            canvas[fg_y:fg_y+fg_h, fg_x:fg_x+fg_w] = blended_roi
 
     if show_crosshair: # Draw crosshair on top of everything
         cv2.line(canvas, (0, canvas_h // 2), (canvas_w, canvas_h // 2), (0, 0, 255), 1)
