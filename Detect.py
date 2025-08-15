@@ -97,9 +97,12 @@ edge_detection_mode = False # Flag to toggle edge detection on foreground
 main_window = 'Webcam Live'
 bg_controls_window = 'Background Controls'
 fg_controls_window = 'Foreground Controls'
+magnifier_window = 'Magnifier'
 
 cv2.namedWindow(main_window, cv2.WINDOW_NORMAL)
 cv2.resizeWindow(main_window, canvas_w, canvas_h)
+cv2.namedWindow(magnifier_window)
+
 
 cv2.namedWindow(bg_controls_window)
 cv2.resizeWindow(bg_controls_window, 300, 150)
@@ -119,6 +122,36 @@ cv2.createTrackbar('X Pos % ', fg_controls_window, settings['fg_x'], 100, nothin
 cv2.createTrackbar('Y Pos % ', fg_controls_window, settings['fg_y'], 100, nothing)
 cv2.createTrackbar('Alpha % ', fg_controls_window, settings['fg_alpha'], 100, nothing)
 cv2.createTrackbar('Rotate', fg_controls_window, settings['fg_rotate'], 3, nothing)
+
+# --- Mouse Callback for Magnifier ---
+final_canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
+def mouse_zoom(event, x, y, flags, param):
+    if event == cv2.EVENT_MOUSEMOVE:
+        magnifier_size = 200
+        zoom_factor = 3
+        
+        # Define the region to crop from the source
+        crop_size = int(magnifier_size / zoom_factor)
+        
+        # Calculate the top-left corner of the crop region, centered around the mouse
+        crop_x1 = x - crop_size // 2
+        crop_y1 = y - crop_size // 2
+        
+        # Ensure the crop region is within the bounds of the final_canvas
+        crop_x1 = np.clip(crop_x1, 0, final_canvas.shape[1] - crop_size)
+        crop_y1 = np.clip(crop_y1, 0, final_canvas.shape[0] - crop_size)
+        
+        crop_x2 = crop_x1 + crop_size
+        crop_y2 = crop_y1 + crop_size
+        
+        # Crop the region and resize it (magnify)
+        roi = final_canvas[crop_y1:crop_y2, crop_x1:crop_x2]
+        if roi.size > 0:
+            magnified_roi = cv2.resize(roi, (magnifier_size, magnifier_size), interpolation=cv2.INTER_NEAREST)
+            cv2.imshow(magnifier_window, magnified_roi)
+
+cv2.setMouseCallback(main_window, mouse_zoom)
+
 
 # --- Main Loop ---
 while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
@@ -178,6 +211,7 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
         cv2.line(canvas, (0, canvas_h // 2), (canvas_w, canvas_h // 2), (0, 0, 255), 1)
         cv2.line(canvas, (canvas_w // 2, 0), (canvas_w // 2, canvas_h), (0, 0, 255), 1)
 
+    final_canvas = canvas.copy()
     cv2.imshow(main_window, canvas)
 
     key = cv2.waitKey(1) & 0xFF
