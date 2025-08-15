@@ -27,7 +27,7 @@ def load_settings():
     """Loads settings from a JSON file."""
     defaults = {
         'fg_width': 50, 'fg_x': 50, 'fg_y': 50, 'fg_alpha': 70, 'fg_rotate': 0,
-        'bg_width': 100, 'bg_x': 50, 'bg_y': 50
+        'bg_width': 100, 'bg_x': 50, 'bg_y': 50, 'zoom_factor': 3
     }
     if not os.path.exists(CONFIG_FILE):
         return defaults
@@ -123,16 +123,23 @@ cv2.createTrackbar('Y Pos % ', fg_controls_window, settings['fg_y'], 100, nothin
 cv2.createTrackbar('Alpha % ', fg_controls_window, settings['fg_alpha'], 100, nothing)
 cv2.createTrackbar('Rotate', fg_controls_window, settings['fg_rotate'], 3, nothing)
 
+cv2.createTrackbar('Zoom', magnifier_window, settings['zoom_factor'], 15, nothing)
+cv2.setTrackbarMin('Zoom', magnifier_window, 2)
+
+
 # --- Mouse Callback for Magnifier ---
 final_canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
 def mouse_zoom(event, x, y, flags, param):
     if event == cv2.EVENT_MOUSEMOVE:
         magnifier_size = 200
-        zoom_factor = 3
-        
+        zoom_factor = settings.get('zoom_factor', 3)
+
         # Define the region to crop from the source
-        crop_size = int(magnifier_size / zoom_factor)
-        
+        try:
+            crop_size = int(magnifier_size / zoom_factor)
+        except ZeroDivisionError:
+            crop_size = int(magnifier_size / 2) # Fallback
+
         # Calculate the top-left corner of the crop region, centered around the mouse
         crop_x1 = x - crop_size // 2
         crop_y1 = y - crop_size // 2
@@ -165,6 +172,8 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     settings['bg_width'] = cv2.getTrackbarPos('Width % ', bg_controls_window)
     settings['bg_x'] = cv2.getTrackbarPos('X Pos % ', bg_controls_window)
     settings['bg_y'] = cv2.getTrackbarPos('Y Pos % ', bg_controls_window)
+    
+    settings['zoom_factor'] = cv2.getTrackbarPos('Zoom', magnifier_window)
 
     # --- Create blank canvas ---
     canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
@@ -219,7 +228,18 @@ while cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) >= 1:
     elif key == ord('q'): binarize_mode = not binarize_mode
     elif key == ord('w'): show_crosshair = not show_crosshair
     elif key == ord('e'): edge_detection_mode = not edge_detection_mode
-    # ... (other key bindings) ...
+    elif key == ord('1'):
+        settings['fg_alpha'] = 25
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 25)
+    elif key == ord('2'):
+        settings['fg_alpha'] = 50
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 50)
+    elif key == ord('3'):
+        settings['fg_alpha'] = 75
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 75)
+    elif key == ord('4'):
+        settings['fg_alpha'] = 100
+        cv2.setTrackbarPos('Alpha % ', fg_controls_window, 100)
 
 # --- Cleanup ---
 save_settings(settings) # Save settings on exit
